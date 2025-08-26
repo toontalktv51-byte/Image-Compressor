@@ -236,23 +236,21 @@
   transform: none;
 }
 
-.wp-btn.primary {
+/* Add support for wp-primary/wp-secondary classes on .wp-btn */
+.wp-btn.wp-primary {
   background: var(--primary);
   color: #fff;
 }
-
-.wp-btn.primary:hover {
+.wp-btn.wp-primary:hover {
   background: var(--primary);
   color: #fff;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
 }
-
-.wp-btn.secondary {
+.wp-btn.wp-secondary {
   background: var(--secondary);
   color: #fff;
 }
-
-.wp-btn.secondary:hover {
+.wp-btn.wp-secondary:hover {
   background: var(--secondary);
   color: #fff;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);

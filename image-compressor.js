@@ -72,6 +72,19 @@
     const processingEl = document.getElementById('wp-processing');
     const processingText = document.getElementById('wp-processing-text');
 
+    // Add dialog polyfill on known dialogs
+    function ensureDialogPolyfill(el) {
+      if (!el) return;
+      if (typeof el.showModal !== 'function') {
+        el.showModal = function() { this.setAttribute('open', ''); };
+      }
+      if (typeof el.close !== 'function') {
+        el.close = function() { this.removeAttribute('open'); };
+      }
+    }
+    ensureDialogPolyfill(reloadModal);
+    ensureDialogPolyfill(confirmModal);
+
     if (!iconAdd || !imageListEl || !template) {
       return;
     }
@@ -92,10 +105,21 @@
       sharedCtx.clearRect(0, 0, sharedCanvas.width, sharedCanvas.height);
     }
 
-    function generateId() { 
-      return Math.random().toString(36).slice(2) + Date.now().toString(36); 
+    // Safe image bitmap creation wrapper
+    async function safeCreateImageBitmap(blob) {
+      if (window.createImageBitmap) {
+        try { return await window.createImageBitmap(blob); } catch {}
+      }
+      // Fallback to Image element
+      return await new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+        img.src = url;
+      });
     }
-    
+
     function formatBytes(bytes) { 
       if (bytes < 1024) return `${bytes} B`; 
       const kb = bytes / 1024; 
@@ -137,6 +161,49 @@
       setTimeout(() => { if (div.parentNode) div.remove(); }, 3000);
     }
 
+    // Restore bulk helpers
+    async function compressAllImages(quality = null) {
+      if (!qualityRange && !quality) return;
+      const compressionQuality = quality || parseInt(qualityRange.value);
+      showProcessing('Compressing all images...');
+      for (let i = 0; i < images.length; i++) {
+        const item = images[i];
+        try {
+          await ensureCompressed(item, compressionQuality);
+          const progress = Math.round(((i + 1) / images.length) * 100);
+          showProcessing(`Compressing all images... ${progress}%`);
+        } catch {}
+      }
+      hideProcessing();
+      refreshAllImageCardStatuses();
+      toast(`Compressed ${images.length} image(s) at ${compressionQuality}% quality`);
+    }
+
+    function refreshAllImageCardStatuses() {
+      images.forEach(updateImageCardStatus);
+    }
+
+    async function downloadImages(imageList, processingMessage) {
+      if (!qualityRange) return;
+      const quality = parseInt(qualityRange.value);
+      showProcessing(processingMessage);
+      let downloadedCount = 0;
+      for (const item of imageList) {
+        try {
+          const compressed = await ensureCompressed(item, quality);
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(compressed.blob);
+          link.download = item.name.replace(/(\.[^.]+)$/, '-compressed$1');
+          link.click();
+          URL.revokeObjectURL(link.href);
+          downloadedCount++;
+        } catch {}
+      }
+      hideProcessing();
+      if (downloadedCount > 0) toast(`Downloaded ${downloadedCount} compressed image${downloadedCount > 1 ? 's' : ''}`);
+      else toast('No images were downloaded');
+    }
+
     // Load JSZip for Download All
     let jszipPromise = null;
     function ensureJSZipLoaded() {
@@ -170,7 +237,6 @@
         URL.revokeObjectURL(link.href);
         toast('Downloaded compressed images ZIP');
       } catch (e) {
-        console.error('ZIP creation failed, falling back to individual downloads:', e);
         await downloadImages(imagesToZip, 'Downloading images...');
       }
     }
@@ -212,7 +278,7 @@
         filterButton.style.display = hasAtLeastTwo ? '' : 'none';
       }
     }
-
+    
     function toggleFrame(showFrame) { 
       if (uploadFrame) uploadFrame.style.display = showFrame ? '' : 'none'; 
       if (compareViewport) compareViewport.style.display = showFrame ? 'none' : ''; 
@@ -253,7 +319,7 @@
     }
 
     async function compressFile(file, qualityPercent) {
-      const bitmap = await createImageBitmap(file);
+      const bitmap = await safeCreateImageBitmap(file);
       try {
         const isPng = file.type.includes('png');
         if (qualityPercent >= 100) {
@@ -537,6 +603,7 @@
       compressAllBtn.addEventListener('click', () => {
         if (images.length < 2) { toast('Add at least 2 images to compress all'); return; }
         const compressModal = document.getElementById('wp-compress-all-modal');
+        ensureDialogPolyfill(compressModal);
         if (compressModal) compressModal.showModal();
       });
     }
@@ -549,6 +616,7 @@
     const confirmCompressBtn = document.getElementById('wp-confirm-compress');
 
     if (compressModal && compressQualityRange && compressQualityValue && compressQualityPercentage) {
+      ensureDialogPolyfill(compressModal);
       compressQualityRange.addEventListener('input', (e) => {
         const value = e.target.value;
         compressQualityValue.value = value;
@@ -606,7 +674,7 @@
         showProcessing('Optimizing...');
         try {
           const tolerance = Math.max(1024, Math.round(targetBytes * 0.02));
-          const bitmap = await createImageBitmap(item.file);
+          const bitmap = await safeCreateImageBitmap(item.file);
           async function searchForTarget(mime, bmp = bitmap) {
             let low = 1, high = 100;
             let bestBelow = null, bestAbove = null;
@@ -637,9 +705,9 @@
               sharedCtx.drawImage(bitmap, 0, 0, sharedCanvas.width, sharedCanvas.height);
               const downBlob = await new Promise(resolve => sharedCanvas.toBlob(resolve, 'image/jpeg', 0.92));
               if (downBlob) {
-                const downBitmap = await createImageBitmap(downBlob);
+                const downBitmap = await safeCreateImageBitmap(downBlob);
                 let downChosen = await searchForTarget('image/jpeg', downBitmap);
-                downBitmap.close();
+                if (downBitmap && downBitmap.close) downBitmap.close();
                 if (downChosen && downChosen.blob.size <= targetBytes) { best = downChosen; break; }
                 if (!best || (downChosen && downChosen.blob.size < best.blob.size)) { best = downChosen || best; }
               }
@@ -661,9 +729,8 @@
           } else {
             toast('Could not meet target size');
           }
-          bitmap.close();
+          if (bitmap && bitmap.close) bitmap.close();
         } catch (err) {
-          console.error('Optimization error:', err);
           toast('Optimization failed');
         }
         hideProcessing();
@@ -730,16 +797,20 @@
 
     // Robust image copy helper
     async function tryCopyBlobToClipboardRobust(blob) {
-      // 1) Direct write of original type
       if (navigator.clipboard && navigator.clipboard.write && typeof window.ClipboardItem !== 'undefined') {
         try {
           await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
           return 'copied';
         } catch {}
       }
-      // 2) Convert to PNG via canvas and try write
       try {
-        const img = await blobToImage(blob);
+        const img = await new Promise((resolve, reject) => {
+          const url = URL.createObjectURL(blob);
+          const im = new Image();
+          im.onload = () => { URL.revokeObjectURL(url); resolve(im); };
+          im.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+          im.src = url;
+        });
         const canvas = document.createElement('canvas');
         canvas.width = img.width;
         canvas.height = img.height;
@@ -753,7 +824,6 @@
           } catch {}
         }
       } catch {}
-      // 3) URL text via clipboard.writeText
       try {
         const url = URL.createObjectURL(blob);
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -761,7 +831,6 @@
           setTimeout(() => URL.revokeObjectURL(url), 2000);
           return 'url';
         }
-        // 4) execCommand fallback for URL text
         const input = document.createElement('input');
         input.value = url;
         input.setAttribute('readonly', '');
@@ -778,17 +847,12 @@
       return 'failed';
     }
 
-    function blobToImage(blob) {
-      return new Promise((resolve, reject) => {
-        const url = URL.createObjectURL(blob);
-        const img = new Image();
-        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
-        img.onerror = reject;
-        img.src = url;
-      });
+    function setEmptyAndRender() { 
+      setEmptyState(); 
+      renderList(); 
+      setTimeout(() => { images.length && selectImage(images[images.length - 1].id); }, 0);
     }
 
-    // Copy/Download handlers split
     if (imageListEl) {
       imageListEl.addEventListener('click', async (e) => {
         const actionBtn = e.target.closest('[data-action]');
@@ -819,7 +883,6 @@
             toast('Compressed image downloaded');
           }
         } catch (err) {
-          console.error(`${action} error:`, err);
           toast(`Failed to ${action} image`);
         }
       });
@@ -847,12 +910,6 @@
         compareViewport.style.setProperty('--split', percent + '%');
       });
       document.addEventListener('touchend', () => { isDragging = false; });
-    }
-
-    function setEmptyAndRender() { 
-      setEmptyState(); 
-      renderList(); 
-      setTimeout(() => { images.length && selectImage(images[images.length - 1].id); }, 0);
     }
 
     // Initialize

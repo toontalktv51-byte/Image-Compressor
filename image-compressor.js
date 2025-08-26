@@ -82,9 +82,6 @@
       return;
     }
 
-    console.log('Template content:', template.content);
-    console.log('Template first child:', template.content.firstElementChild);
-
     /** State */
     /** @type {{id:string, file:File, url:string, originalBytes:number, name:string, type:string, cachedCompressed?:{quality:number, blob:Blob, url:string}}[]} */
     const images = [];
@@ -129,23 +126,7 @@
       return `${reduction} • Original: ${original} → Compressed: ${compressed}`;
     }
 
-    // Smooth stats animation
-    function animateStats(element, startText, endText, duration = 800) {
-      if (!element) return;
-      
-      element.textContent = startText;
-      element.style.opacity = '0.7';
-      
-      setTimeout(() => {
-        element.textContent = endText;
-        element.style.opacity = '1';
-        element.style.transform = 'none';
-      }, 100);
-    }
-
     function toast(message) { 
-      console.log('Toast function called with message:', message); // Debug log
-      
       // Remove any existing toasts first
       const existingToasts = document.querySelectorAll('.wp-toast');
       existingToasts.forEach(toast => toast.remove());
@@ -174,65 +155,103 @@
       div.style.pointerEvents = 'none';
       
       document.body.appendChild(div); 
-      console.log('Toast element created and added to DOM:', div); // Debug log
-      console.log('Toast element styles:', div.style.cssText); // Debug log
       
       setTimeout(() => {
         if (div.parentNode) {
           div.remove();
-          console.log('Toast element removed from DOM'); // Debug log
         }
-      }, 3000); // Increased duration to 3 seconds for better visibility
+      }, 3000);
+    }
+
+    // Dynamically load JSZip when needed
+    let jszipPromise = null;
+    function ensureJSZipLoaded() {
+      if (window.JSZip) return Promise.resolve(window.JSZip);
+      if (jszipPromise) return jszipPromise;
+      jszipPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+        script.async = true;
+        script.onload = () => resolve(window.JSZip);
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+      return jszipPromise;
+    }
+
+    async function zipAndDownload(imagesToZip) {
+      try {
+        const JSZip = await ensureJSZipLoaded();
+        const zip = new JSZip();
+        for (const item of imagesToZip) {
+          const name = item.name.replace(/(\.[^.]+)$/, '-compressed$1');
+          const arrayBuffer = await item.cachedCompressed.blob.arrayBuffer();
+          zip.file(name, arrayBuffer);
+        }
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        // Try to copy the ZIP to clipboard (best effort)
+        if (navigator.clipboard && navigator.clipboard.write) {
+          try {
+            await navigator.clipboard.write([new ClipboardItem({ 'application/zip': zipBlob })]);
+            toast('ZIP copied to clipboard');
+          } catch {}
+        }
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(zipBlob);
+        link.download = 'compressed-images.zip';
+        link.click();
+        URL.revokeObjectURL(link.href);
+        toast('Downloaded compressed images ZIP');
+      } catch (e) {
+        console.error('ZIP creation failed, falling back to individual downloads:', e);
+        await downloadImages(imagesToZip, 'Downloading images...');
+      }
+    }
+
+    // Smooth stats animation (kept lightweight)
+    function animateStats(element, startText, endText) {
+      if (!element) return;
+      element.textContent = startText;
+      element.style.opacity = '0.7';
+      setTimeout(() => {
+        element.textContent = endText;
+        element.style.opacity = '1';
+      }, 100);
     }
 
     // Helper function to compress all images at current quality
     async function compressAllImages(quality = null) {
       if (!qualityRange && !quality) return;
-      
       const compressionQuality = quality || parseInt(qualityRange.value);
       showProcessing('Compressing all images...');
-      
       for (let i = 0; i < images.length; i++) {
         const item = images[i];
         try {
           await ensureCompressed(item, compressionQuality);
-          // Update progress
           const progress = Math.round(((i + 1) / images.length) * 100);
           showProcessing(`Compressing all images... ${progress}%`);
         } catch (err) {
           console.error(`Failed to compress ${item.name}:`, err);
         }
       }
-      
       hideProcessing();
-      
-      // Refresh all image card statuses after bulk compression
       refreshAllImageCardStatuses();
-      
       toast(`Compressed ${images.length} image(s) at ${compressionQuality}% quality`);
     }
 
-    // Helper function to update all image card statuses
     function refreshAllImageCardStatuses() {
       images.forEach(item => {
         updateImageCardStatus(item);
       });
     }
 
-    // Helper function to update individual image card status
     function updateImageCardStatus(item) {
       const card = document.querySelector(`[data-id="${item.id}"]`);
       if (!card) return;
-      
-      // Remove existing status classes
       card.classList.remove('compressed', 'uncompressed');
       card.style.borderColor = '';
       card.style.boxShadow = '';
-      
-      // Get current compression status
       const status = getCompressionStatus(item);
-      
-      // Apply new status
       if (status === 'compressed') {
         card.classList.add('compressed');
         card.style.borderColor = 'var(--primary)';
@@ -242,8 +261,6 @@
         card.style.borderColor = '#ff6b6b';
         card.style.boxShadow = '0 0 0 1px #ff6b6b';
       }
-      
-      // Update size display if it exists
       const sizeElement = card.querySelector('.wp-size');
       if (sizeElement) {
         if (status === 'compressed' && item.cachedCompressed && item.cachedCompressed.blob) {
@@ -257,7 +274,6 @@
       }
     }
 
-    // Helper function to get compression status
     function getCompressionStatus(item) {
       if (item.cachedCompressed && item.cachedCompressed.blob) {
         return 'compressed';
@@ -265,20 +281,50 @@
       return 'uncompressed';
     }
 
-    // Copy blob to clipboard if possible; returns true if copy succeeded
-    async function tryCopyBlobToClipboard(blob) {
+    // Enhanced copy: try direct, then canvas PNG, then URL text
+    async function tryCopyBlobToClipboardRobust(blob) {
+      // Attempt direct
       if (navigator.clipboard && navigator.clipboard.write) {
         try {
-          await navigator.clipboard.write([
-            new ClipboardItem({ [blob.type]: blob })
-          ]);
-          toast('Compressed image copied to clipboard!');
-          return true;
-        } catch (err) {
-          console.log('Clipboard write failed:', err);
-        }
+          await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+          return 'copied';
+        } catch {}
       }
-      return false;
+      // Canvas PNG conversion
+      try {
+        const img = await blobToImage(blob);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const pngBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        if (pngBlob && navigator.clipboard && navigator.clipboard.write) {
+          try {
+            await navigator.clipboard.write([new ClipboardItem({ [pngBlob.type]: pngBlob })]);
+            return 'copied';
+          } catch {}
+        }
+      } catch {}
+      // URL text fallback
+      try {
+        const url = URL.createObjectURL(blob);
+        await navigator.clipboard.writeText(url);
+        // revoke shortly after to allow paste
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        return 'url';
+      } catch {}
+      return 'failed';
+    }
+
+    function blobToImage(blob) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = reject;
+        img.src = url;
+      });
     }
 
     function forceDownloadBlob(blob, filename) {
@@ -289,29 +335,22 @@
       URL.revokeObjectURL(link.href);
     }
 
-    // Helper function to download multiple images
     async function downloadImages(imageList, processingMessage) {
       if (!qualityRange) return;
-      
       const quality = parseInt(qualityRange.value);
       showProcessing(processingMessage);
-      
       let processedCount = 0;
       for (const item of imageList) {
         try {
           const compressed = await ensureCompressed(item, quality);
           const outName = item.name.replace(/(\.[^.]+)$/, '-compressed$1');
-
-          // Copy first, then download
-          await tryCopyBlobToClipboard(compressed.blob);
+          const copyResult = await tryCopyBlobToClipboardRobust(compressed.blob);
           forceDownloadBlob(compressed.blob, outName);
-
           processedCount++;
         } catch (err) {
           console.error(`Failed to process ${item.name}:`, err);
         }
       }
-      
       hideProcessing();
       if (processedCount > 0) {
         toast(`Copied & downloaded ${processedCount} compressed image${processedCount > 1 ? 's' : ''}!`);
@@ -320,41 +359,10 @@
       }
     }
 
-    function copyImageUrl(blob) {
-      try {
-        const url = URL.createObjectURL(blob);
-        const tempInput = document.createElement('input');
-        tempInput.value = url;
-        tempInput.style.position = 'absolute';
-        tempInput.style.left = '-9999px';
-        document.body.appendChild(tempInput);
-        tempInput.select();
-        tempInput.setSelectionRange(0, 99999);
-        const success = document.execCommand('copy');
-        document.body.removeChild(tempInput);
-        URL.revokeObjectURL(url);
-        if (success) toast('Compressed image URL copied to clipboard!');
-      } catch {}
-    }
-    
-    function downloadImage(blob) {
-      try {
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `image-${Date.now()}.${blob.type.split('/')[1]}`;
-        link.click();
-        URL.revokeObjectURL(link.href);
-      } catch (err) {
-        console.error('Download failed:', err);
-      }
-    }
-
     function setEmptyState() { 
       const has = images.length > 0; 
       const hasAtLeastTwo = images.length >= 2;
       if (emptyState) emptyState.style.display = has ? 'none' : ''; 
-      
-      // Update uploaded images count (hidden by default; shown when ≥2)
       if (uploadCountEl) {
         uploadCountEl.textContent = `Images: ${images.length}`;
         uploadCountEl.style.display = hasAtLeastTwo ? '' : 'none';
@@ -363,8 +371,6 @@
         uploadCountBottomEl.textContent = `Images: ${images.length}`;
         uploadCountBottomEl.style.display = hasAtLeastTwo ? '' : 'none';
       }
-
-      // Delete all buttons may not exist anymore, guard
       if (deleteAllBtn) {
         deleteAllBtn.disabled = !has; 
         deleteAllBtn.style.display = hasAtLeastTwo ? '' : 'none';
@@ -373,7 +379,6 @@
         bottomDeleteAllBtn.disabled = !has;
         bottomDeleteAllBtn.style.display = hasAtLeastTwo ? '' : 'none';
       }
-      
       if (downloadAllBtn) {
         downloadAllBtn.disabled = !hasAtLeastTwo; 
         downloadAllBtn.style.display = hasAtLeastTwo ? '' : 'none';
@@ -382,15 +387,11 @@
         bottomDownloadAllBtn.disabled = !hasAtLeastTwo;
         bottomDownloadAllBtn.style.display = hasAtLeastTwo ? '' : 'none';
       }
-      
-      // Compress All (≥2 images)
       const compressAllBtn = document.getElementById('wp-compress-all');
       if (compressAllBtn) {
         compressAllBtn.disabled = !hasAtLeastTwo;
         compressAllBtn.style.display = hasAtLeastTwo ? '' : 'none';
       }
-      
-      // Filter visible only when ≥2 images
       if (filterButton) {
         filterButton.style.display = hasAtLeastTwo ? '' : 'none';
       }
@@ -414,7 +415,6 @@
       return images.find(i => i.id === selectedId); 
     }
 
-    // Processing functions
     function showProcessing(message) {
       if (processingEl && processingText) {
         processingText.textContent = message || 'Processing...';
@@ -622,7 +622,6 @@
         return;
       }
       const uncompressedImages = [];
-      const processedList = [];
       for (const item of images) {
         if (!item.cachedCompressed || !item.cachedCompressed.blob) {
           uncompressedImages.push(item);
@@ -635,13 +634,14 @@
           await compressAllImages(parseInt(qualityRange.value));
         }
       }
-      // Proceed to copy+download all compressed images
       const readyImages = images.filter(i => i.cachedCompressed && i.cachedCompressed.blob);
       if (readyImages.length === 0) {
         toast('No compressed images to download');
         return;
       }
-      await downloadImages(readyImages, 'Copying & downloading...');
+      showProcessing('Preparing ZIP...');
+      await zipAndDownload(readyImages);
+      hideProcessing();
     }
 
     if (downloadAllBtn) {
@@ -718,6 +718,11 @@
 
     if (resetToolBtn) {
       resetToolBtn.addEventListener('click', () => {
+        // If already reset (no images), skip modal and inform
+        if (images.length === 0) {
+          toast('Tool is already reset');
+          return;
+        }
         pendingReset = true;
         if (confirmTitle) confirmTitle.textContent = 'Reset The Tool?';
         if (confirmMessage) confirmMessage.textContent = 'This action will remove all images & reset the Tool.';
@@ -766,7 +771,19 @@
         confirmCompressBtn.addEventListener('click', async () => {
           const quality = parseInt(compressQualityRange.value);
           compressModal.close();
+          // Sync main quality controls to this chosen value
+          if (qualityRange) qualityRange.value = String(quality);
+          if (qualityValueInput) qualityValueInput.value = String(quality);
+          const percentageEl = document.getElementById('wp-quality-percentage');
+          if (percentageEl) percentageEl.textContent = quality + '%';
+          // Apply sync visually and recompute selected preview
           await compressAllImages(quality);
+          const current = getSelected();
+          if (current) {
+            const c = await ensureCompressed(current, quality);
+            if (overlayImg) overlayImg.src = c.url;
+            updateStats(current, c.blob);
+          }
         });
       }
     }
@@ -1010,14 +1027,18 @@
         if (!item) return;
         if (!qualityRange) return;
         const quality = parseInt(qualityRange.value);
-
         try {
           const compressed = await ensureCompressed(item, quality);
           const outName = item.name.replace(/(\.[^.]+)$/, '-compressed$1');
-          // Always attempt to copy, then download
-          await tryCopyBlobToClipboard(compressed.blob);
+          const copyResult = await tryCopyBlobToClipboardRobust(compressed.blob);
           forceDownloadBlob(compressed.blob, outName);
-          toast('Copied & downloaded compressed image!');
+          if (copyResult === 'copied') {
+            toast('Copied & downloaded compressed image!');
+          } else if (copyResult === 'url') {
+            toast('Copied URL & downloaded compressed image');
+          } else {
+            toast('Downloaded compressed image');
+          }
         } catch (err) {
           console.error(`${action} error:`, err);
           toast(`Failed to ${action} image`);
@@ -1052,6 +1073,5 @@
     // Initialize - ensure only Add is visible
     setEmptyState();
     syncQualityInputs(50);
-    console.log('WordPress Image Compressor: Initialized with minimal controls on load');
   });
 })();

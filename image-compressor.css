@@ -1049,6 +1049,58 @@
   margin-top: 16px;
 }
 
+/* Compress All modal controls - match right panel styling */
+.wp-quality-selection label {
+  display: block;
+  margin-bottom: 12px;
+  font-weight: 600;
+  color: var(--text);
+  font-size: 14px;
+}
+
+#wp-compress-quality-range {
+  width: 100%;
+  margin: 0;
+  height: 6px;
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+  border-radius: 999px;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+#wp-compress-quality-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid var(--secondary);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  margin-top: -6px;
+  cursor: pointer;
+}
+
+#wp-compress-quality-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid var(--secondary);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+
+#wp-compress-quality-value {
+  width: 80px;
+  text-align: center;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
 /* Responsive modal - fixed positioning for small screens */
 @media (max-width: 768px) {
   .wp-modal {

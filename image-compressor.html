@@ -16,7 +16,7 @@
       </button>
       <input id="wp-file-input" type="file" accept="image/*" multiple hidden />
       <div class="wp-filter-group">
-        <button id="wp-icon-filter" class="wp-icon-btn wp-outline" type="button" title="Filter" aria-haspopup="menu" aria-expanded="false" aria-controls="wp-filter-menu" aria-label="Filter">
+        <button id="wp-icon-filter" class="wp-icon-btn wp-outline" type="button" title="Filter" aria-haspopup="menu" aria-expanded="false" aria-controls="wp-filter-menu" aria-label="Filter" style="display:none;">
           Filter
         </button>
         <div id="wp-filter-menu" class="wp-filter-menu" role="menu">
@@ -26,17 +26,9 @@
           <div class="wp-menu-item" data-sort="small">Smallest First</div>
         </div>
       </div>
-      <span id="wp-upload-count" class="wp-upload-count" aria-live="polite">Images: 0</span>
-      <button id="wp-compress-all" class="wp-btn wp-primary wp-small" type="button" title="Compress All" aria-label="Compress All" disabled>
+      <span id="wp-upload-count" class="wp-upload-count" aria-live="polite" style="display:none;">Images: 0</span>
+      <button id="wp-compress-all" class="wp-btn wp-primary wp-small" type="button" title="Compress All" aria-label="Compress All" disabled style="display:none;">
         Compress All
-      </button>
-      <!-- Added: Top Download All button to match JS reference -->
-      <button id="wp-download-all" class="wp-btn wp-secondary wp-small" type="button" title="Download All" aria-label="Download All" disabled>
-        Download All
-      </button>
-      <!-- Added: Top Delete All button to match JS reference -->
-      <button id="wp-icon-delete-all" class="wp-btn wp-danger wp-small" type="button" title="Delete All" aria-label="Delete All" disabled>
-        Delete All
       </button>
     </div>
 
@@ -48,12 +40,6 @@
       <button id="wp-bottom-download-all" class="wp-btn wp-secondary wp-small" type="button" title="Download All" aria-label="Download All" disabled style="display:none;">
         Download All
       </button>
-      <!-- Added: Bottom Delete All button to match JS reference -->
-      <button id="wp-bottom-delete-all" class="wp-btn wp-danger wp-small" type="button" title="Delete All" aria-label="Delete All" disabled style="display:none;">
-        Delete All
-      </button>
-      <!-- Added: Bottom upload count mirrored for consistency -->
-      <span id="wp-upload-count-bottom" class="wp-upload-count" aria-live="polite" style="display:none;">Images: 0</span>
       <button id="wp-reset-tool" class="wp-btn wp-danger wp-small" type="button" title="Reset" aria-label="Reset tool">
         Reset
       </button>

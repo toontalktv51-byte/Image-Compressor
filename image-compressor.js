@@ -395,14 +395,17 @@
 
     function setEmptyState() { 
       const has = images.length > 0; 
+      const hasAtLeastTwo = images.length >= 2;
       if (emptyState) emptyState.style.display = has ? 'none' : ''; 
       
       // Update uploaded images count
       if (uploadCountEl) {
         uploadCountEl.textContent = `Images: ${images.length}`;
+        uploadCountEl.style.display = hasAtLeastTwo ? '' : 'none';
       }
       if (uploadCountBottomEl) {
         uploadCountBottomEl.textContent = `Images: ${images.length}`;
+        uploadCountBottomEl.style.display = hasAtLeastTwo ? '' : 'none';
       }
 
       // Show/hide buttons based on image upload status
@@ -416,22 +419,22 @@
       }
       
       if (downloadAllBtn) {
-        downloadAllBtn.disabled = !has; 
-        downloadAllBtn.style.display = has ? '' : 'none';
+        downloadAllBtn.disabled = !hasAtLeastTwo; 
+        downloadAllBtn.style.display = hasAtLeastTwo ? '' : 'none';
       }
       if (bottomDownloadAllBtn) {
-        bottomDownloadAllBtn.disabled = !has;
-        bottomDownloadAllBtn.style.display = has ? '' : 'none';
+        bottomDownloadAllBtn.disabled = !hasAtLeastTwo;
+        bottomDownloadAllBtn.style.display = hasAtLeastTwo ? '' : 'none';
       }
       
-      // Enable/disable compress all button
+      // Enable/disable compress all button (requires at least 2 images)
       const compressAllBtn = document.getElementById('wp-compress-all');
       if (compressAllBtn) {
-        compressAllBtn.disabled = !has;
-        compressAllBtn.style.display = has ? '' : 'none';
+        compressAllBtn.disabled = !hasAtLeastTwo;
+        compressAllBtn.style.display = hasAtLeastTwo ? '' : 'none';
       }
       
-      // Show/hide filter button based on image count
+      // Show/hide filter button based on image count (keep visible when at least one)
       const filterButton = document.getElementById('wp-icon-filter');
       if (filterButton) {
         filterButton.style.display = has ? '' : 'none';
@@ -749,82 +752,103 @@
       });
     }
 
-    if (downloadAllBtn) {
-      downloadAllBtn.addEventListener('click', async () => {
-        if (images.length === 0) {
-          toast('No images to download');
+    // Reusable handler for Download All (operates on compressed images only)
+    async function onDownloadAllClick() {
+      if (images.length === 0) {
+        toast('No images to download');
+        return;
+      }
+
+      // Check for uncompressed images
+      const uncompressedImages = [];
+      const compressedImages = [];
+      const sameSizeImages = [];
+      
+      for (const item of images) {
+        const status = getCompressionStatus(item);
+        if (status === 'uncompressed') {
+          uncompressedImages.push(item);
+        } else if (status === 'compressed') {
+          compressedImages.push(item);
+        } else {
+          sameSizeImages.push(item);
+        }
+      }
+
+      if (uncompressedImages.length > 0) {
+        // Show popup for uncompressed images
+        const message = `Found ${uncompressedImages.length} uncompressed image(s). What would you like to do?`;
+        const choice = confirm(`${message}\n\nClick OK to compress them first, or Cancel to ignore and download only compressed images.`);
+        
+        if (choice) {
+          // User chose to compress - jump to first uncompressed image
+          const firstUncompressed = uncompressedImages[0];
+          selectImage(firstUncompressed.id);
+          
+          // Scroll to the image in the list
+          const imageCard = document.querySelector(`[data-id="${firstUncompressed.id}"]`);
+          if (imageCard) {
+            imageCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // Highlight the image briefly
+            imageCard.style.boxShadow = '0 0 0 3px var(--primary)';
+            setTimeout(() => {
+              imageCard.style.boxShadow = '';
+            }, 2000);
+          }
+          
+          toast(`Please compress image "${firstUncompressed.name}" first, then try downloading all again.`);
+          return;
+        } else {
+          // User chose to ignore - download only compressed images
+          if (compressedImages.length === 0) {
+            toast('No compressed images to download');
+            return;
+          }
+          await downloadImages(compressedImages, 'Downloading compressed images...');
           return;
         }
+      }
 
-        // Check for uncompressed images
-        const uncompressedImages = [];
-        const compressedImages = [];
-        const sameSizeImages = [];
+      // Check if there are same-size images (compressed but no size reduction)
+      if (sameSizeImages.length > 0) {
+        const message = `Found ${sameSizeImages.length} image(s) that couldn't be compressed further. Download them anyway?`;
+        const choice = confirm(`${message}\n\nClick OK to download all images, or Cancel to skip same-size images.`);
         
-        for (const item of images) {
-          const status = getCompressionStatus(item);
-          if (status === 'uncompressed') {
-            uncompressedImages.push(item);
-          } else if (status === 'compressed') {
-            compressedImages.push(item);
-          } else {
-            sameSizeImages.push(item);
-          }
-        }
-
-        if (uncompressedImages.length > 0) {
-          // Show popup for uncompressed images
-          const message = `Found ${uncompressedImages.length} uncompressed image(s). What would you like to do?`;
-          const choice = confirm(`${message}\n\nClick OK to compress them first, or Cancel to ignore and download only compressed images.`);
-          
-          if (choice) {
-            // User chose to compress - jump to first uncompressed image
-            const firstUncompressed = uncompressedImages[0];
-            selectImage(firstUncompressed.id);
-            
-            // Scroll to the image in the list
-            const imageCard = document.querySelector(`[data-id="${firstUncompressed.id}"]`);
-            if (imageCard) {
-              imageCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              // Highlight the image briefly
-              imageCard.style.boxShadow = '0 0 0 3px var(--primary)';
-              setTimeout(() => {
-                imageCard.style.boxShadow = '';
-              }, 2000);
-            }
-            
-            toast(`Please compress image "${firstUncompressed.name}" first, then try downloading all again.`);
-            return;
-          } else {
-            // User chose to ignore - download only compressed images
-            if (compressedImages.length === 0) {
-              toast('No compressed images to download');
-              return;
-            }
-            await downloadImages(compressedImages, 'Downloading compressed images...');
+        if (!choice) {
+          // User chose to skip same-size images
+          if (compressedImages.length === 0) {
+            toast('No compressed images to download');
             return;
           }
+          await downloadImages(compressedImages, 'Downloading compressed images...');
+          return;
         }
+      }
 
-        // Check if there are same-size images (compressed but no size reduction)
-        if (sameSizeImages.length > 0) {
-          const message = `Found ${sameSizeImages.length} image(s) that couldn't be compressed further. Download them anyway?`;
-          const choice = confirm(`${message}\n\nClick OK to download all images, or Cancel to skip same-size images.`);
-          
-          if (!choice) {
-            // User chose to skip same-size images
-            if (compressedImages.length === 0) {
-              toast('No compressed images to download');
-              return;
-            }
-            await downloadImages(compressedImages, 'Downloading compressed images...');
-            return;
-          }
+      // Download all images (compressed + same-size)
+      const allImages = [...compressedImages, ...sameSizeImages];
+      await downloadImages(allImages, 'Downloading all images...');
+    }
+
+    if (downloadAllBtn) {
+      downloadAllBtn.addEventListener('click', onDownloadAllClick);
+    }
+    // Wire bottom Download All to same handler
+    if (bottomDownloadAllBtn) {
+      bottomDownloadAllBtn.addEventListener('click', onDownloadAllClick);
+    }
+    // Wire bottom Delete All to same confirm flow
+    if (bottomDeleteAllBtn) {
+      bottomDeleteAllBtn.addEventListener('click', () => {
+        if (deleteAllBtn && getComputedStyle(deleteAllBtn).display !== 'none') {
+          deleteAllBtn.click();
+          return;
         }
-
-        // Download all images (compressed + same-size)
-        const allImages = [...compressedImages, ...sameSizeImages];
-        await downloadImages(allImages, 'Downloading all images...');
+        pendingDeleteAll = true;
+        if (confirmTitle) confirmTitle.textContent = 'Delete all images?';
+        if (confirmMessage) confirmMessage.textContent = 'This action will remove all uploaded images.';
+        if (confirmDelete) confirmDelete.textContent = 'Delete';
+        if (confirmModal) confirmModal.showModal();
       });
     }
 

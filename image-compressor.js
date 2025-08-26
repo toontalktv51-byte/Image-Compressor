@@ -728,6 +728,66 @@
       uploadFrame.addEventListener('click', () => { if (fileInput) fileInput.click(); });
     }
 
+    // Robust image copy helper
+    async function tryCopyBlobToClipboardRobust(blob) {
+      // 1) Direct write of original type
+      if (navigator.clipboard && navigator.clipboard.write && typeof window.ClipboardItem !== 'undefined') {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+          return 'copied';
+        } catch {}
+      }
+      // 2) Convert to PNG via canvas and try write
+      try {
+        const img = await blobToImage(blob);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const pngBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        if (pngBlob && navigator.clipboard && navigator.clipboard.write && typeof window.ClipboardItem !== 'undefined') {
+          try {
+            await navigator.clipboard.write([new ClipboardItem({ [pngBlob.type]: pngBlob })]);
+            return 'copied';
+          } catch {}
+        }
+      } catch {}
+      // 3) URL text via clipboard.writeText
+      try {
+        const url = URL.createObjectURL(blob);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(url);
+          setTimeout(() => URL.revokeObjectURL(url), 2000);
+          return 'url';
+        }
+        // 4) execCommand fallback for URL text
+        const input = document.createElement('input');
+        input.value = url;
+        input.setAttribute('readonly', '');
+        input.style.position = 'absolute';
+        input.style.left = '-9999px';
+        document.body.appendChild(input);
+        input.select();
+        input.setSelectionRange(0, input.value.length);
+        const ok = document.execCommand && document.execCommand('copy');
+        document.body.removeChild(input);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        if (ok) return 'url';
+      } catch {}
+      return 'failed';
+    }
+
+    function blobToImage(blob) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = reject;
+        img.src = url;
+      });
+    }
+
     // Copy/Download handlers split
     if (imageListEl) {
       imageListEl.addEventListener('click', async (e) => {

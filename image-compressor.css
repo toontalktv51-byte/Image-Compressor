@@ -706,15 +706,17 @@
 }
 
 .wp-image-card .wp-copy-btn {
-  background: var(--secondary);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(142, 67, 240, 0.3);
+  background: #f7f7fb;
+  color: var(--secondary);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
 }
 
 .wp-image-card .wp-copy-btn:hover {
-  background: var(--secondary);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(142, 67, 240, 0.3);
+  background: #ffffff;
+  color: var(--secondary);
+  border-color: var(--border);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
 }
 
 .wp-image-card .wp-download-btn {
@@ -1047,6 +1049,58 @@
   gap: 10px;
   justify-content: flex-end;
   margin-top: 16px;
+}
+
+/* Compress All modal controls - match right panel styling */
+.wp-quality-selection label {
+  display: block;
+  margin-bottom: 12px;
+  font-weight: 600;
+  color: var(--text);
+  font-size: 14px;
+}
+
+#wp-compress-quality-range {
+  width: 100%;
+  margin: 0;
+  height: 6px;
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+  border-radius: 999px;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+#wp-compress-quality-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid var(--secondary);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  margin-top: -6px;
+  cursor: pointer;
+}
+
+#wp-compress-quality-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid var(--secondary);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+
+#wp-compress-quality-value {
+  width: 80px;
+  text-align: center;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
 }
 
 /* Responsive modal - fixed positioning for small screens */
@@ -1432,4 +1486,29 @@
 .wp-bottom-actions #wp-bottom-delete-all:hover {
   background: #8B0000 !important;
   color: #fff !important;
+}
+
+/* Light style for cancel buttons */
+#wp-cancel-compress,
+#wp-cancel-delete,
+#wp-cancel-reload {
+  background: #f7f7fb !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06) !important;
+}
+#wp-cancel-compress:hover,
+#wp-cancel-delete:hover,
+#wp-cancel-reload:hover {
+  background: #ffffff !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Precisely center the remove X */
+.wp-image-card .wp-remove {
+  display: grid;
+  place-items: center;
+  text-align: center;
 }
